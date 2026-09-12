@@ -1,0 +1,34 @@
+{
+  "period": "2026-09",
+  "line_items": [
+    {
+      "TransactionID": "TXN-001",
+      "amount": 100000,
+      "category": "Revenue",
+      "taxable_or_deductible": "taxable income",
+      "regulation_ref": "Clause 1",
+      "notes": "Example only."
+    },
+    {
+      "TransactionID": "TXN-002",
+      "amount": 20000,
+      "category": "Expense",
+      "taxable_or_deductible": "deductible expense",
+      "regulation_ref": "Clause 2",
+      "notes": "Example only."
+    },
+    {
+      "TransactionID": "TXN-003",
+      "amount": 5000,
+      "category": "Expense",
+      "taxable_or_deductible": "deductible expense",
+      "regulation_ref": "Clause 2",
+      "notes": "Example only."
+    }
+  ],
+  "gross_income": 100000,
+  "total_deductions": 25000,
+  "taxable_income": 75000,
+  "tax_rate": 0,
+  "tax_liability": 0
+}

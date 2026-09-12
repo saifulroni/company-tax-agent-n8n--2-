@@ -1,0 +1,555 @@
+{
+  "name": "Company Tax Agent (Chat + Daily Statement)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 12,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "id": "966edda2-203d-4737-8046-b0fe19b903d8",
+      "name": "Daily Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "compnay income statements",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "id": "dde2c4cb-149d-4710-9aeb-5cf71081bdba",
+      "name": "Read Income Ledger",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        272,
+        320
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "documentURL": "https://docs.google.com/document/d/REPLACE_WITH_REGULATIONS_DOC_ID/edit"
+      },
+      "id": "911d125c-52de-46a1-bc9a-9d58a382e9c6",
+      "name": "Read Tax Regulations",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        272,
+        512
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_DOCS_CREDENTIAL_ID",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Regulation text and ledger rows are below.\n\nREGULATIONS:\n{{ $json.content || $json.text }}\n\nLEDGER ROWS (JSON):\n{{ JSON.stringify($('Read Income Ledger').all().map(i => i.json)) }}\n\nPeriod label: {{ $now.toFormat(\"yyyy-MM\") }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a tax computation assistant. Using ONLY the regulation text and ledger rows provided in the user message, do two things:\n\n1. For every ledger row, output: TransactionID, amount (the transaction amount taken from the ledger row), category, whether it is taxable income / a deductible expense / a non-deductible item / capital expenditure, cite the specific regulation clause it relies on, and a short note (especially for rows already flagged with a Notes hint).\n2. Compute totals: gross_income, total_deductions, taxable_income, tax_rate applied, tax_liability.\n\nReturn ONLY valid JSON matching the required schema. Include one line item per ledger row with its amount. Do not invent regulation clauses that are not in the text — if the text does not cover a case, mark regulation_ref as \"NOT COVERED\" and explain in notes."
+        }
+      },
+      "id": "a1ea00ca-8418-48cf-a932-185fdf048ba2",
+      "name": "Calculate Tax Statement",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        784,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "reasoningEffort": "low"
+        }
+      },
+      "id": "4a20ac08-97dd-4049-9702-8ebf56fbf6ac",
+      "name": "OpenAI Model (Calc)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        736,
+        592
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_WITH_OPENAI_CREDENTIAL_ID",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"period\": {\"type\": \"string\"},\n    \"line_items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"TransactionID\": {\"type\": \"string\"},\n          \"amount\": {\"type\": \"number\"},\n          \"category\": {\"type\": \"string\"},\n          \"taxable_or_deductible\": {\"type\": \"string\"},\n          \"regulation_ref\": {\"type\": \"string\"},\n          \"notes\": {\"type\": \"string\"}\n        }\n      }\n    },\n    \"gross_income\": {\"type\": \"number\"},\n    \"total_deductions\": {\"type\": \"number\"},\n    \"taxable_income\": {\"type\": \"number\"},\n    \"tax_rate\": {\"type\": \"number\"},\n    \"tax_liability\": {\"type\": \"number\"}\n  },\n  \"required\": [\"period\",\"line_items\",\"gross_income\",\"total_deductions\",\"taxable_income\",\"tax_rate\",\"tax_liability\"]\n}"
+      },
+      "id": "f605f612-033a-4b55-8108-cd602776b832",
+      "name": "Statement Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        992,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = $input.first().json.output || {};\nconst period = out.period || '';\nconst generatedAt = new Date().toISOString();\nconst items = (out.line_items || []).map(li => ({\n  json: {\n    Period: period,\n    TransactionID: li.TransactionID || '',\n    Amount: (li.amount != null ? li.amount : ''),\n    Category: li.category || '',\n    Taxable_or_Deductible: li.taxable_or_deductible || '',\n    Regulation: li.regulation_ref || '',\n    Notes: li.notes || '',\n    Generated_At: generatedAt,\n  },\n}));\nreturn items;"
+      },
+      "id": "0c21bc4d-17d3-41fd-89fb-358e7faa4283",
+      "name": "Explode Line Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1031979780,
+          "mode": "list",
+          "cachedResultName": "taxation statement",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "3044d739-0d25-4a56-ad32-9bd536d0a4ff",
+      "name": "Append Statement Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1296,
+        208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "subject",
+              "type": "string",
+              "value": "=Daily Tax Statement - {{$json.output.period}} (Tax due: {{$json.output.tax_liability}})"
+            },
+            {
+              "id": "a2",
+              "name": "htmlBody",
+              "type": "string",
+              "value": "=<h2>Tax statement - {{$json.output.period}}</h2><p><b>Gross income:</b> {{$json.output.gross_income}}<br/><b>Total deductions:</b> {{$json.output.total_deductions}}<br/><b>Taxable income:</b> {{$json.output.taxable_income}}<br/><b>Tax rate:</b> {{$json.output.tax_rate}}<br/><b>Tax liability:</b> {{$json.output.tax_liability}}</p><h3>Line-item breakdown ({{ ($json.output.line_items || []).length }} rows)</h3><table border=\"1\" cellpadding=\"6\" cellspacing=\"0\" style=\"border-collapse:collapse;font-family:sans-serif;font-size:13px;\"><thead><tr style=\"background:#f0f0f0;\"><th>Txn ID</th><th>Amount</th><th>Category</th><th>Taxable / Deductible</th><th>Regulation</th><th>Notes</th></tr></thead><tbody>{{ ($json.output.line_items || []).map(li => \"<tr><td>\" + (li.TransactionID || \"\") + \"</td><td>\" + (li.amount != null ? li.amount : \"\") + \"</td><td>\" + (li.category || \"\") + \"</td><td>\" + (li.taxable_or_deductible || \"\") + \"</td><td>\" + (li.regulation_ref || \"\") + \"</td><td>\" + (li.notes || \"\") + \"</td></tr>\").join(\"\") }}</tbody></table><p style=\"color:#888;font-size:12px;\">These line items have been appended to the taxation statement sheet.</p>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fdc0bcae-3a45-482c-b48a-ef2e9cdf131f",
+      "name": "Build Email Report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1568,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "YOUR_CFO_EMAIL@example.com",
+        "subject": "={{$json.subject}}",
+        "message": "={{$json.htmlBody}}",
+        "options": {}
+      },
+      "id": "c75ff05f-a48f-4294-865b-29ac675cc953",
+      "name": "Send Email To CFO",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1824,
+        400
+      ],
+      "webhookId": "cf06dbd4-662c-4fe1-9ea3-e13afa795a03",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "zs6Xf9IQYFu7hy2W",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e53cd874-0140-4654-a10a-162b15a2e039",
+      "name": "Chat Trigger",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "REPLACE_ME"
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "=You are the company's tax Q&A assistant. Answer questions about the company's income, expenses, and tax position using the provided tools (income ledger, taxation statement history, and the tax regulation document). Always cite which ledger row(s) or regulation clause(s) you relied on. If information isn't in the tools, say so rather than guessing. This is a simplified/illustrative regulation set - do not present answers as certified tax advice."
+        }
+      },
+      "id": "b56dab98-bb8c-45c7-a87f-184aa7cb6390",
+      "name": "Tax Q&A Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        304,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "7d37e539-1897-4551-9b5f-26b9c147568f",
+      "name": "OpenAI Model (Chat)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        96,
+        192
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REPLACE_WITH_OPENAI_CREDENTIAL_ID",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Chat Trigger').item.json.sessionId }}",
+        "contextWindowLength": 10
+      },
+      "id": "8751313e-d622-42a6-8382-3719df858d9d",
+      "name": "Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        384,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "compnay income statements",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "id": "08914e55-d4b5-4c58-8808-1e1e6525da3b",
+      "name": "Tool: Income Ledger",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        544,
+        208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1031979780,
+          "mode": "list",
+          "cachedResultName": "taxation statement",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/REPLACE_WITH_SPREADSHEET_ID/edit"
+        },
+        "options": {}
+      },
+      "id": "6ae0adae-813c-4716-aa84-48be4ffa4fe3",
+      "name": "Tool: Taxation Statements",
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.5,
+      "position": [
+        704,
+        208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "documentURL": "https://docs.google.com/document/d/REPLACE_WITH_REGULATIONS_DOC_ID/edit"
+      },
+      "id": "899162da-04b1-49a9-8009-e47e4553e54c",
+      "name": "Tool: Tax Regulations Doc",
+      "type": "n8n-nodes-base.googleDocsTool",
+      "typeVersion": 2,
+      "position": [
+        864,
+        208
+      ],
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_DOCS_CREDENTIAL_ID",
+          "name": "Google Docs account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Income Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Income Ledger": {
+      "main": [
+        [
+          {
+            "node": "Read Tax Regulations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Tax Regulations": {
+      "main": [
+        [
+          {
+            "node": "Calculate Tax Statement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Tax Statement": {
+      "main": [
+        [
+          {
+            "node": "Explode Line Items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model (Calc)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Calculate Tax Statement",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Statement Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Calculate Tax Statement",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode Line Items": {
+      "main": [
+        [
+          {
+            "node": "Append Statement Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Report": {
+      "main": [
+        [
+          {
+            "node": "Send Email To CFO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Trigger": {
+      "main": [
+        [
+          {
+            "node": "Tax Q&A Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model (Chat)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Tax Q&A Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Tax Q&A Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Income Ledger": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tax Q&A Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Taxation Statements": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tax Q&A Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Tax Regulations Doc": {
+      "ai_tool": [
+        [
+          {
+            "node": "Tax Q&A Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": []
+}

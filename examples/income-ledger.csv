@@ -1,0 +1,4 @@
+TransactionID,Date,Description,Amount,Category,Notes
+TXN-001,2026-09-01,Product sales,100000,Revenue,
+TXN-002,2026-09-01,Office rent,20000,Expense,
+TXN-003,2026-09-02,Office supplies,5000,Expense,
